@@ -118,7 +118,7 @@ class MinHashLSH(object):
             self.b, self.r = _optimal_param(threshold, num_perm,
                     false_positive_weight, false_negative_weight)
 
-        self.prepickle = storage_config['type'] == 'redis' if prepickle is None else prepickle
+        self.prepickle = storage_config['type'] in ['redis','leveldb'] if prepickle is None else prepickle
 
         basename = storage_config.get('basename', _random_name(11))
         self.hashtables = [

@@ -22,6 +22,12 @@ except ImportError:
     cassandra = None
     c_cluster = None
     c_concurrent = None
+try:
+    import plyvel
+    import pickle
+    leveldb = True
+except ImportError:
+    leveldb = None
 
 
 def ordered_storage(config, name=None):
@@ -60,6 +66,8 @@ def ordered_storage(config, name=None):
         return RedisListStorage(config, name=name)
     if tp == 'cassandra':
         return CassandraListStorage(config, name=name)
+    if tp == 'leveldb':
+        return LevelDbListStorage(config, name=name)
 
 
 def unordered_storage(config, name=None):
@@ -97,6 +105,8 @@ def unordered_storage(config, name=None):
         return RedisSetStorage(config, name=name)
     if tp == 'cassandra':
         return CassandraSetStorage(config, name=name)
+    if tp == 'leveldb':
+        return LevelDbSetStorage(config, name=name)
 
 
 class Storage(ABC):
@@ -229,7 +239,6 @@ class DictSetStorage(UnorderedStorage, DictListStorage):
 
     def insert(self, key, *vals, **kwargs):
         self._dict[key].update(vals)
-
 
 if cassandra is not None:
 
@@ -1016,6 +1025,74 @@ if redis is not None:
         @staticmethod
         def _get_len(r, k):
             return r.scard(k)
+
+if leveldb is not None:
+    class LevelDbStorage:
+        
+        def __init__(self, config, name=None):
+            self.config = config['leveldb']
+
+            if name is None:
+                name = _random_name(11)
+            self._name = name
+
+            self._dict = self.config['client'].prefixed_db(name)
+
+    class LevelDbListStorage(OrderedStorage):
+        '''This is a wrapper class around ``leveldb`` enabling
+        it to support an API consistent with `Storage`
+        '''
+        def __init__(self, config, name=None):
+            LevelDbStorage.__init__(self, config, name=name)
+
+        def keys(self):
+            return [k for k in self._dict.iterator(include_value=False)]
+
+        def get(self, key):
+            return pickle.loads(self._dict.get(key, []))
+
+        def remove(self, *keys):
+            for key in keys:
+                self._dict.delete(key)
+
+        def remove_val(self, key, val):
+            data = pickle.loads(self._dict.get(key, pickle.dumps([])))
+            data.remove(val)
+            self._dict.put(key, pickle.dumps(data))
+
+        def insert(self, key, *vals, **kwargs):
+            data = pickle.loads(self._dict.get(key, pickle.dumps([])))
+            data.extend(vals)
+            self._dict.put(key, pickle.dumps(data))
+
+        def size(self):
+            return len(self.keys())
+
+        def itemcounts(self, **kwargs):
+            '''Returns a dict where the keys are the keys of the container.
+            The values are the *lengths* of the value sequences stored
+            in this container.
+            '''
+            return {k: len(pickle.loads(v)) for k, v in self._dict}
+
+        def has_key(self, key):
+            return self._dict.get(key, None) is not None
+
+
+    class LevelDbSetStorage(UnorderedStorage, LevelDbListStorage):
+        '''This is a wrapper class around ``leveldb`` enabling
+        it to support an API consistent with `Storage`
+        '''
+        def __init__(self, config, name=None):
+            LevelDbListStorage.__init__(self, config, name=name)
+
+        def get(self, key):
+            return pickle.loads(self._dict.get(key, pickle.dumps(set())))
+
+        def insert(self, key, *vals, **kwargs):
+            data = pickle.loads(self._dict.get(key, pickle.dumps(set())))
+            data.update(vals)
+            self._dict.put(key, pickle.dumps(data))
 
 
 def _random_name(length):
