@@ -84,6 +84,7 @@ class MinHashLSH(object):
         prepickle (bool, optional): If True, all keys are pickled to bytes before
             insertion. If None, a default value is chosen based on the
             `storage_config`.
+        key_type (type, optional): If set, throws an error if trying to insert a key not of the type specified
 
     Note:
         `weights` must sum to 1.0, and the format is
@@ -94,7 +95,7 @@ class MinHashLSH(object):
     '''
 
     def __init__(self, threshold=0.9, num_perm=128, weights=(0.5, 0.5),
-                 params=None, storage_config=None, prepickle=None):
+                 params=None, storage_config=None, prepickle=None, key_type=None):
         storage_config = {'type': 'dict'} if not storage_config else storage_config
         self._buffer_size = 50000
         if threshold > 1.0 or threshold < 0.0:
@@ -118,7 +119,8 @@ class MinHashLSH(object):
             self.b, self.r = _optimal_param(threshold, num_perm,
                     false_positive_weight, false_negative_weight)
 
-        self.prepickle = storage_config['type'] in ['redis','leveldb'] if prepickle is None else prepickle
+        self.prepickle = storage_config['type'] == 'redis' if prepickle is None else prepickle
+        self.key_type = bytes if storage_config['type'] == 'leveldb' else key_type
 
         basename = storage_config.get('basename', _random_name(11))
         self.hashtables = [
@@ -168,6 +170,8 @@ class MinHashLSH(object):
         if len(minhash) != self.h:
             raise ValueError("Expecting minhash with length %d, got %d"
                     % (self.h, len(minhash)))
+        if self.key_type and not isinstance(key, self.key_type):
+            raise TypeError(f"Attempting to insert invalid key, expecting {type(key_type)} got {type(key)}")
         if self.prepickle:
             key = pickle.dumps(key)
         if check_duplication and key in self.keys:

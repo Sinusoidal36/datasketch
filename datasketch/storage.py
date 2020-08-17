@@ -1031,6 +1031,7 @@ if leveldb is not None:
         
         def __init__(self, config, name=None):
             self.config = config['leveldb']
+            self._buffer_size = config.get('buffer_size', 1000)
 
             if name is None:
                 name = _random_name(11)
@@ -1049,21 +1050,22 @@ if leveldb is not None:
             return [k for k in self._dict.iterator(include_value=False)]
 
         def get(self, key):
-            return pickle.loads(self._dict.get(key, []))
+            return pickle.loads(self._dict.get(key, pickle.dumps([])))
 
         def remove(self, *keys):
             for key in keys:
-                self._dict.delete(key)
+                self._dict.delete(key, sync=self.config.get('sync', True))
 
         def remove_val(self, key, val):
             data = pickle.loads(self._dict.get(key, pickle.dumps([])))
             data.remove(val)
-            self._dict.put(key, pickle.dumps(data))
+            self._dict.put(key, pickle.dumps(data), sync=self.config.get('sync', True))
 
         def insert(self, key, *vals, **kwargs):
+            assert isinstance(key, bytes)
             data = pickle.loads(self._dict.get(key, pickle.dumps([])))
             data.extend(vals)
-            self._dict.put(key, pickle.dumps(data))
+            self._dict.put(key, pickle.dumps(data), sync=self.config.get('sync', True))
 
         def size(self):
             return len(self.keys())
@@ -1090,9 +1092,10 @@ if leveldb is not None:
             return pickle.loads(self._dict.get(key, pickle.dumps(set())))
 
         def insert(self, key, *vals, **kwargs):
+            assert isinstance(key, bytes)
             data = pickle.loads(self._dict.get(key, pickle.dumps(set())))
             data.update(vals)
-            self._dict.put(key, pickle.dumps(data))
+            self._dict.put(key, pickle.dumps(data), sync=self.config.get('sync', True))
 
 
 def _random_name(length):
